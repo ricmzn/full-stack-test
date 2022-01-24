@@ -103,7 +103,6 @@ export default async function (base: string, app: Application) {
 
   app.get(`${base}/beers`, handler(async (req, res) => {
     const perPage = 20;
-    console.log(req.query);
     let data = cachedData;
     let page = 1;
     if (typeof req.query.search === "string") {
@@ -116,8 +115,8 @@ export default async function (base: string, app: Application) {
       page = parseInt(req.query.page, 10);
     }
     res.send({
-      data: data.slice(page * perPage, (page + 1) * perPage),
-      pages: Math.max(Math.ceil(data.length / perPage) - 1, 1),
+      data: data.slice((page - 1) * perPage, page * perPage),
+      pages: Math.max(Math.ceil(data.length / perPage), 1),
     } as BeerAPIResponse);
   }));
 }
