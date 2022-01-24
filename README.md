@@ -1,36 +1,49 @@
-<p align="center">
-  <img width="260" src="https://raw.githubusercontent.com/myTapp/temos-vagas/master/logo_mytapp_primario.png?raw=true">
-</p>
+## Teste full-stack developer myTapp
 
-## Teste full-stack developer (v1.2)
-O teste consiste em criar uma aplicação com Node.js e PostgreSQL que expõe uma API REST de um CRUD de usuário e uma aplicação web contendo uma interface para login e acesso a dados de uma API externa.
+Enviado por Ricardo Maes
 
-Depois de logado o usuário da aplicação web deve poder acessar dados da [Punk API v2](https://punkapi.com/) - uma API aberta da cervejaria BrewDog.
+Linguagem:
 
-### Back-end
-- Todos os endpoints de consulta de dados devem ter autenticação por webtoken ou similar
-- Fique a vontade para usar algum ORM de preferência ([sequelize](https://github.com/sequelize/sequelize), [typeorm](https://github.com/typeorm/typeorm), ...)
+* TypeScript
 
-> O CRUD de usuários não necessita interface, coloque os endpoints disponíveis no README do projeto.
+Frameworks:
 
-### Front-end
-O front-end deve apresentar pelo menos os seguintes requisitos:
-  - Interface de login
-    - Feedbacks de usuário ou senha incorreta
-  - Listagem dos dados da Punk API v2
-  - Paginação dos dados
-  
-> Pode ser utilizado qualquer framework front-end, preprocessadores de css, task runners, bundlers, ... de sua preferência, mas nenhum deles é de uso obrigatório.
+* Servidor: Node.js + Express
+* Front-end: React.js
 
-## Critérios de avaliação
-- Funcionamento do projeto
-- Estrutura do código
-- Uso de boas práticas
-- Cumprimento dos requisitos mínimos
+## Preparação do App
 
-## Deve ser entregue:
-- Um repositório git (fork deste)
-> Não se deve fazer o commit de pastas como `node_modules`, o projeto deve instalar suas dependências a partir do `package.json`
+A aplicação requer Node.js v16 ou superior
 
-## Extras:
-- Build para produção
+> Recomenda-se o uso do Yarn como gerenciador de pacotes
+
+Execute no diretório:
+
+* `yarn install`
+* `yarn typeorm schema:sync`
+* `yarn typeorm migration:run`
+* `yarn keygen`
+
+## Execução em ambiente dev
+
+Back-end: `yarn server:dev`
+
+Front-end: `yarn vite:dev`
+
+## Compilação e execução em prod
+
+### Sem Docker
+
+* `yarn server:build`
+* `yarn vite:build`
+* `cd dist`
+* `node src/index.js`
+
+### Com Docker
+
+* `docker build . -t app-cervejas-ricardo`
+* `docker volume create app-cervejas-ricardo_data`
+* `docker run -it --rm -v app-cervejas-ricardo_data:/app/data app-cervejas-ricardo src/migrate.js`
+* `docker run -d -p 8080:8080 -v app-cervejas-ricardo_data:/app/data app-cervejas-ricardo`
+
+A aplicação será servida em http://localhost:8080/
