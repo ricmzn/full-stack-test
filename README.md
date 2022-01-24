@@ -46,4 +46,9 @@ Front-end: `yarn vite:dev`
 * `docker run -it --rm -v app-cervejas-ricardo_data:/app/data app-cervejas-ricardo src/migrate.js`
 * `docker run -d -p 8080:8080 -v app-cervejas-ricardo_data:/app/data app-cervejas-ricardo`
 
-A aplicação será servida em http://localhost:8080/
+## Usando a aplicação
+
+A aplicação será servida em http://localhost:8080/, e contém um único usuário com as credenciais:
+
+* Usuário: `admin`
+* Senha: `batata`
