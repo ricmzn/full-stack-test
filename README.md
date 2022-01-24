@@ -15,8 +15,6 @@ Frameworks:
 
 A aplicação requer Node.js v16 ou superior
 
-> Recomenda-se o uso do Yarn como gerenciador de pacotes
-
 Execute no diretório:
 
 * `yarn install`
@@ -24,13 +22,13 @@ Execute no diretório:
 * `yarn typeorm migration:run`
 * `yarn keygen`
 
-## Execução em ambiente dev
+## Execução em ambiente de desenvolvimento
 
 Back-end: `yarn server:dev`
 
 Front-end: `yarn vite:dev`
 
-## Compilação e execução em prod
+## Compilação e execução em modo produção
 
 ### Sem Docker
 
@@ -48,7 +46,39 @@ Front-end: `yarn vite:dev`
 
 ## Usando a aplicação
 
-A aplicação será servida em http://localhost:8080/, e contém um único usuário com as credenciais:
+Em modo de produção, a aplicação inteira será servida em http://localhost:8080/, e em modo de
+desenvolvimento, a API será servida na porta 8080 e o front-end na porta 3000 (com proxy para a API)
+
+Durante a prepação, é criado um único usuário com as credenciais:
 
 * Usuário: `admin`
 * Senha: `batata`
+
+## Endpoints back-end
+
+> A autenticação dos endpoints deve ser por meio de Bearer Token no header `Authorization`
+
+---
+* POST `/api/login` - Geração de Token
+  - Aceita corpo JSON
+  - Parâmetros de corpo:
+    - `username`: Nome do usuário
+    - `password`: Senha do usuário
+  - Retornos:
+    - Status 401: Credenciais inválidas ou não fornecidas
+    - Status 200: Sucesso; corpo contém a token (string) para autenticação
+---
+* GET `/api/beers` - Listagem de cervejas
+  - Requer autenticação
+  - Parâmetros de query:
+    - `search`: Opcional; termo de busca (nome da cerveja)
+    - `page`: Opcional; número da página na busca
+  - Retorno:
+    - JSON:
+    ```json
+    {
+      "data": [...] /* Dados da PunkAPI */,
+      "pages": 10 /* Páginas disponíveis */
+    }
+    ```
+---
