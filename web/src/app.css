@@ -9,3 +9,11 @@ html, main, body, .container {
   align-content: stretch;
   justify-content: center;
 }
+
+tr.interactive {
+  cursor: pointer;
+}
+
+img {
+  max-width: 100%;
+}

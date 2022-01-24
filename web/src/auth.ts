@@ -22,8 +22,13 @@ export function getToken(decode = true) {
   }
 }
 
-export function setToken(token: string) {
-  localStorage.setItem(`${pkg.name}-token`, token);
+export function setToken(token?: string) {
+  if (token) {
+    localStorage.setItem(`${pkg.name}-token`, token);
+  } else {
+    localStorage.removeItem(`${pkg.name}-token`);
+  }
+  refreshToken();
 }
 
 export function refreshToken() {

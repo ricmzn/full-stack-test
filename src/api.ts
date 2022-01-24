@@ -3,9 +3,16 @@ import bcrypt from "bcrypt";
 import { Application, NextFunction, Request, Response } from "express";
 import jwtMiddleware from "express-jwt";
 import fs from "fs";
+import Fuse from "fuse.js";
 import JWT from "jsonwebtoken";
 import { createConnection } from "typeorm";
+import { Beer } from "../web/src/punkAPI";
 import { User } from "./entities/User";
+
+export interface BeerAPIResponse {
+  data: Beer[],
+  pages: number,
+}
 
 export const passwordStrength = 10;
 export const placeholderPassword = bcrypt.hashSync("foobar", passwordStrength);
@@ -23,12 +30,36 @@ function handler(h: (req: Request, res: Response, next?: NextFunction) => Promis
 }
 
 // Realiza um pedido à PunkAPI e retorna os dados
-async function requestPunkAPI(uri: string) {
+async function punkApiRequest<T>(uri: string) {
   if (uri.startsWith("/")) {
     uri = uri.replace("/", "");
   }
-  const response = await axios.get(`https://api.punkapi.com/v2/${uri}`);
-  return response.data;
+  const url = `https://api.punkapi.com/v2/${uri}`;
+  console.log(`GET ${url}`);
+  return axios.get<T>(url).then((response) => response.data);
+}
+
+// Salva os dados da PunkAPI locamente para paginação
+let cachedData: Beer[] = [];
+let searcher: Fuse<Beer>;
+let lastLoaded: number;
+async function updateData() {
+  if (lastLoaded == null) {
+    let page = 1;
+    while (true) {
+      const data = await punkApiRequest<Beer[]>(`beers?page=${page}&per_page=80`);
+      if (data.length > 0) {
+        cachedData = cachedData.concat(data);
+        page += 1;
+      } else {
+        break;
+      }
+    }
+    cachedData.sort((a, b) => a.name > b.name ? 1 : -1);
+    searcher = new Fuse(cachedData, { keys: ["name"], shouldSort: true });
+    lastLoaded = Date.now();
+    console.log(`Cached ${cachedData.length} entries`);
+  }
 }
 
 // Busca o usuário de acordo com o login e senha, retornando o objeto do usuário caso
@@ -46,9 +77,11 @@ async function loginUser(username?: string, password?: string) {
   }
 }
 
-export default function (base: string, app: Application) {
+export default async function (base: string, app: Application) {
   // Instancia a conexão configurada no ormconfig.json
-  createConnection();
+  await createConnection();
+  // Atualiza a base de dados em memória
+  await updateData();
 
   app.post(`${base}/login`, handler(async (req, res) => {
     const user = await loginUser(req.body.username, req.body.password);
@@ -69,6 +102,22 @@ export default function (base: string, app: Application) {
   app.use(`${base}`, jwtMiddleware({ secret: jwtKey, algorithms: [jwtAlgorithm] }));
 
   app.get(`${base}/beers`, handler(async (req, res) => {
-    res.send(await requestPunkAPI("/beers"));
+    const perPage = 20;
+    console.log(req.query);
+    let data = cachedData;
+    let page = 1;
+    if (typeof req.query.search === "string") {
+      const search = req.query.search;
+      if (search.length > 0) {
+        data = searcher.search(req.query.search).map((result) => result.item);
+      }
+    }
+    if (typeof req.query.page === "string") {
+      page = parseInt(req.query.page, 10);
+    }
+    res.send({
+      data: data.slice(page * perPage, (page + 1) * perPage),
+      pages: Math.max(Math.ceil(data.length / perPage) - 1, 1),
+    } as BeerAPIResponse);
   }));
 }

@@ -9,9 +9,9 @@ type FailureReason = "connection" | "credentials";
 function getReasonText(reason: FailureReason) {
   switch (reason) {
     case "connection":
-      return "Não foi possível enviar as informações, verifique a sua conexão";
+      return "Failed to connect to server, please check your internet connection";
     case "credentials":
-      return "Usuário ou senha incorretos";
+      return "Incorrect username or password";
   }
 }
 
@@ -36,7 +36,6 @@ async function submit(event: FormEvent<HTMLFormElement>, navigate: (to: string) 
       password: elements.password.value,
     });
     setToken(response.data);
-    refreshToken();
     navigate("/");
   } catch (err) {
     if (axios.isAxiosError(err)) {
@@ -62,14 +61,14 @@ export default function () {
       <AuthAlert reason={reason} />
       <Form onSubmit={(event) => submit(event, navigate, setReason, setBusy)}>
         <FormGroup>
-          <Label for="username">Usuário</Label>
+          <Label for="username">Username</Label>
           <Input id="username" name="username" autoComplete="off" autoFocus />
         </FormGroup>
         <FormGroup>
-          <Label for="password">Senha</Label>
+          <Label for="password">Password</Label>
           <Input id="password" name="password" autoComplete="off" type="password" />
         </FormGroup>
-        <Button color="primary" disabled={busy}>Entrar</Button>
+        <Button color="primary" disabled={busy}>Login</Button>
       </Form>
     </Col>
   );
