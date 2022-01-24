@@ -75,9 +75,9 @@ Durante a prepação, é criado um único usuário com as credenciais:
     - `page`: Opcional; número da página na busca
   - Retorno:
     - JSON:
-    ```json
+    ```js
     {
-      "data": [...] /* Dados da PunkAPI */,
+      "data": [...data] /* Dados da PunkAPI */,
       "pages": 10 /* Páginas disponíveis */
     }
     ```
