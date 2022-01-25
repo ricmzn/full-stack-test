@@ -5,7 +5,6 @@ import jwtMiddleware from "express-jwt";
 import fs from "fs";
 import Fuse from "fuse.js";
 import JWT from "jsonwebtoken";
-import { getConnectionManager } from "typeorm";
 import { Token } from "../web/src/auth";
 import { Beer } from "../web/src/punkAPI";
 import { User } from "./entities/User";
@@ -94,10 +93,6 @@ async function loginUser(username?: string, password?: string) {
  * @param username Força usuário na API, pulando autenticação
  */
 export default async function (base: string, app: Application, dataFetcher = punkApiRequest, username?: string) {
-  // Instancia a conexão configurada no ormconfig.json
-  if (!getConnectionManager().has("default")) {
-
-  }
   // Atualiza a base de dados em memória
   await updateData(dataFetcher);
 
