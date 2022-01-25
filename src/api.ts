@@ -5,7 +5,7 @@ import jwtMiddleware from "express-jwt";
 import fs from "fs";
 import Fuse from "fuse.js";
 import JWT from "jsonwebtoken";
-import { createConnection } from "typeorm";
+import { createConnection, getConnectionManager } from "typeorm";
 import { Beer } from "../web/src/punkAPI";
 import { User } from "./entities/User";
 
@@ -30,24 +30,24 @@ function handler(h: (req: Request, res: Response, next?: NextFunction) => Promis
 }
 
 // Realiza um pedido à PunkAPI e retorna os dados
-async function punkApiRequest<T>(uri: string) {
+async function punkApiRequest(uri: string) {
   if (uri.startsWith("/")) {
     uri = uri.replace("/", "");
   }
   const url = `https://api.punkapi.com/v2/${uri}`;
   console.log(`GET ${url}`);
-  return axios.get<T>(url).then((response) => response.data);
+  return axios.get<Beer[]>(url).then((response) => response.data);
 }
 
 // Salva os dados da PunkAPI locamente para paginação
 let cachedData: Beer[] = [];
 let searcher: Fuse<Beer>;
 let lastLoaded: number;
-async function updateData() {
+async function updateData(dataFetcher: (uri: string) => Promise<Beer[]>) {
   if (lastLoaded == null) {
     let page = 1;
     while (true) {
-      const data = await punkApiRequest<Beer[]>(`beers?page=${page}&per_page=80`);
+      const data = await dataFetcher(`beers?page=${page}&per_page=80`);
       if (data.length > 0) {
         cachedData = cachedData.concat(data);
         page += 1;
@@ -77,13 +77,24 @@ async function loginUser(username?: string, password?: string) {
   }
 }
 
-export default async function (base: string, app: Application) {
+/**
+ * @param base Caminho base da API
+ * @param app Aplicação do Express
+ * @param dataFetcher Fonte de dados do back-end
+ * @param uid User ID usado nas requests, pulando autenticação
+ */
+export default async function (base: string, app: Application, dataFetcher = punkApiRequest, uid?: number) {
   // Instancia a conexão configurada no ormconfig.json
-  await createConnection();
+  if (!getConnectionManager().has("default")) {
+    await createConnection();
+  }
   // Atualiza a base de dados em memória
-  await updateData();
+  await updateData(dataFetcher);
 
   app.post(`${base}/login`, handler(async (req, res) => {
+    if (typeof req.body !== "object") {
+      return res.status(401).send();
+    }
     const user = await loginUser(req.body.username, req.body.password);
     if (user == null) {
       return res.status(401).send();
@@ -99,7 +110,9 @@ export default async function (base: string, app: Application) {
   }));
 
   // Requer login para as rotas definidas a partir desse ponto
-  app.use(`${base}`, jwtMiddleware({ secret: jwtKey, algorithms: [jwtAlgorithm] }));
+  if (uid == null) {
+    app.use(`${base}`, jwtMiddleware({ secret: jwtKey, algorithms: [jwtAlgorithm] }));
+  }
 
   app.get(`${base}/beers`, handler(async (req, res) => {
     const perPage = 20;
