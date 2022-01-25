@@ -1,6 +1,8 @@
 import bodyParser from "body-parser";
 import express from "express";
 import request, { Response } from "supertest";
+import { createConnection, getConnectionManager } from "typeorm";
+import ormconfig from "../ormconfig.json";
 import { sample } from "../web/src/punkAPI";
 import useAPI from "./api";
 
@@ -11,10 +13,15 @@ async function dataFetcher(uri: string) {
   return [sample];
 }
 
-async function API(uid?: number) {
+async function API(username?: string) {
   const app = express();
   app.use(bodyParser.json());
-  await useAPI("/api", app, dataFetcher, uid);
+  if (!getConnectionManager().has("default")) {
+    const conn = await createConnection({ ...ormconfig as any, database: ":memory:" });
+    await conn.synchronize();
+    await conn.runMigrations();
+  }
+  await useAPI("/api", app, dataFetcher, username);
   return app;
 }
 
@@ -43,20 +50,20 @@ function oneResult(res: Response) {
   }
 }
 
-test("/api/login rejects missing body", async () => {
+test("POST /api/login rejects missing body", async () => {
   await request(await API())
     .post("/api/login")
     .expect(401);
 });
 
-test("/api/login rejects body without data", async () => {
+test("POST /api/login rejects body without data", async () => {
   await request(await API())
     .post("/api/login")
     .send({})
     .expect(401);
 });
 
-test("/api/login rejects bad credentials", async () => {
+test("POST /api/login rejects bad credentials", async () => {
   await request(await API())
     .post("/api/login")
     .send({
@@ -66,7 +73,7 @@ test("/api/login rejects bad credentials", async () => {
     .expect(401);
 });
 
-test("/api/login accepts good credentials", async () => {
+test("POST /api/login accepts good credentials", async () => {
   await request(await API())
     .post("/api/login")
     .send({
@@ -81,14 +88,114 @@ test("/api/login accepts good credentials", async () => {
     });
 });
 
-test("/api/beers fails without authentication", async () => {
+test("POST /api/users requires valid username and password", async () => {
+  await request(await API())
+    .post("/api/users")
+    .expect(401);
+
+  await request(await API("admin"))
+    .post("/api/users")
+    .expect(400);
+
+  await request(await API("admin"))
+    .post("/api/users")
+    .send({ username: "", password: "" })
+    .expect(400);
+
+  await request(await API("admin"))
+    .post("/api/users")
+    .send({ username: "asdf", password: "" })
+    .expect(400);
+
+  await request(await API("admin"))
+    .post("/api/users")
+    .send({ username: "asdf", password: "123" })
+    .expect(400);
+
+  await request(await API("admin"))
+    .post("/api/users")
+    .send({ username: "asdf", password: "123456" })
+    .expect(200);
+});
+
+test("PUT /api/users/self allows own password update", async () => {
+  await request(await API())
+    .put("/api/users")
+    .expect(401);
+
+  await request(await API("admin"))
+    .post("/api/users")
+    .send({ username: "put-test", password: "foobar" })
+    .expect(200);
+
+  // Mudança de username não permitida
+  await request(await API("put-test"))
+    .put("/api/users/self")
+    .send({ username: "ababa", password: "barfoo" })
+    .expect(400);
+
+  // Senha curta
+  await request(await API("put-test"))
+    .put("/api/users/self")
+    .send({ password: "bar" })
+    .expect(400);
+
+  // Ok
+  await request(await API("put-test"))
+    .put("/api/users/self")
+    .send({ password: "barfoo" })
+    .expect(200);
+
+  await request(await API())
+    .post("/api/login")
+    .send({ username: "put-test", password: "foobar" })
+    .expect(401);
+
+  await request(await API())
+    .post("/api/login")
+    .send({ username: "put-test", password: "barfoo" })
+    .expect(200);
+});
+
+test("DELETE /api/users allows self-deletion", async () => {
+  await request(await API())
+    .delete("/api/users")
+    .expect(401);
+
+  await request(await API("admin"))
+    .post("/api/users")
+    .send({ username: "delete-test", password: "foobar" })
+    .expect(200);
+
+  // Existe
+  await request(await API())
+    .post("/api/login")
+    .send({ username: "delete-test", password: "foobar" })
+    .expect(200);
+
+  await request(await API("delete-test"))
+    .delete("/api/users/self")
+    .expect(200);
+
+  // Não existe
+  await request(await API("delete-test"))
+    .delete("/api/users/self")
+    .expect(401);
+
+  await request(await API())
+    .post("/api/login")
+    .send({ username: "delete-test", password: "foobar" })
+    .expect(401);
+});
+
+test("GET /api/beers fails without authentication", async () => {
   await request(await API())
     .get("/api/beers")
     .expect(401);
 });
 
-test("/api/beers succeeds with authentication", async () => {
-  await request(await API(1))
+test("GET /api/beers succeeds with authentication", async () => {
+  await request(await API("admin"))
     .get("/api/beers")
     .expect(200)
     .expect("Content-Type", /json/)
@@ -102,8 +209,8 @@ test("/api/beers succeeds with authentication", async () => {
     });
 });
 
-test("/api/beers search with valid name returns results", async () => {
-  await request(await API(1))
+test("GET /api/beers search with valid name returns results", async () => {
+  await request(await API("admin"))
     .get("/api/beers")
     .query("search=IPA")
     .expect(200)
@@ -111,8 +218,8 @@ test("/api/beers search with valid name returns results", async () => {
     .expect(oneResult);
 });
 
-test("/api/beers search with invalid name returns empty array", async () => {
-  await request(await API(1))
+test("GET /api/beers search with invalid name returns empty array", async () => {
+  await request(await API("admin"))
     .get("/api/beers")
     .query("search=foobar")
     .expect(200)
@@ -120,8 +227,8 @@ test("/api/beers search with invalid name returns empty array", async () => {
     .expect(zeroResults);
 });
 
-test("/api/beers paging works", async () => {
-  await request(await API(1))
+test("GET /api/beers paging works", async () => {
+  await request(await API("admin"))
     .get("/api/beers")
     .query("page=1")
     .expect(200)
@@ -129,8 +236,8 @@ test("/api/beers paging works", async () => {
     .expect(oneResult);
 });
 
-test("/api/beers paging and search work", async () => {
-  await request(await API(1))
+test("GET /api/beers paging and search work", async () => {
+  await request(await API("admin"))
     .get("/api/beers")
     .query("page=1")
     .query("search=IPA")
@@ -139,8 +246,8 @@ test("/api/beers paging and search work", async () => {
     .expect(oneResult);
 });
 
-test("/api/beers paging returns nothing after last page", async () => {
-  await request(await API(1))
+test("GET /api/beers paging returns nothing after last page", async () => {
+  await request(await API("admin"))
     .get("/api/beers")
     .query("page=10")
     .expect(200)

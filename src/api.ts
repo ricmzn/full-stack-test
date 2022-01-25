@@ -5,9 +5,11 @@ import jwtMiddleware from "express-jwt";
 import fs from "fs";
 import Fuse from "fuse.js";
 import JWT from "jsonwebtoken";
-import { createConnection, getConnectionManager } from "typeorm";
+import { getConnectionManager } from "typeorm";
+import { Token } from "../web/src/auth";
 import { Beer } from "../web/src/punkAPI";
 import { User } from "./entities/User";
+import { validatePassword, validateUsername } from "./validation";
 
 export interface BeerAPIResponse {
   data: Beer[],
@@ -20,12 +22,20 @@ const jwtKey = fs.readFileSync("jwt.key");
 const jwtAlgorithm = "HS256";
 
 // Embrulha um handler do Express em tratamento de erro async
-function handler(h: (req: Request, res: Response, next?: NextFunction) => Promise<any>) {
-  return (req: Request, res: Response) => {
-    h(req, res).catch((reason) => {
+function handler(h: (req: Request, res: Response, next: NextFunction) => Promise<any>) {
+  return (req: Request, res: Response, next: NextFunction) => {
+    h(req, res, next).catch((reason) => {
       console.error("Error: ", reason);
-      res.status(500).send("Internal server error");
+      res.status(500).send({ message: "Internal server error" });
     });
+  }
+}
+
+// Busca o usuário de acordo com a token
+async function getUser(req: Request) {
+  const uid = (req.user as Token)?.uid;
+  if (uid != null) {
+    return await User.findOne(uid);
   }
 }
 
@@ -81,23 +91,21 @@ async function loginUser(username?: string, password?: string) {
  * @param base Caminho base da API
  * @param app Aplicação do Express
  * @param dataFetcher Fonte de dados do back-end
- * @param uid User ID usado nas requests, pulando autenticação
+ * @param username Força usuário na API, pulando autenticação
  */
-export default async function (base: string, app: Application, dataFetcher = punkApiRequest, uid?: number) {
+export default async function (base: string, app: Application, dataFetcher = punkApiRequest, username?: string) {
   // Instancia a conexão configurada no ormconfig.json
   if (!getConnectionManager().has("default")) {
-    await createConnection();
+
   }
   // Atualiza a base de dados em memória
   await updateData(dataFetcher);
 
+  // Autenticação
   app.post(`${base}/login`, handler(async (req, res) => {
-    if (typeof req.body !== "object") {
-      return res.status(401).send();
-    }
     const user = await loginUser(req.body.username, req.body.password);
     if (user == null) {
-      return res.status(401).send();
+      return res.status(401).send({});
     }
     const payload = {
       uid: user.id
@@ -109,26 +117,104 @@ export default async function (base: string, app: Application, dataFetcher = pun
     res.send(JWT.sign(payload, jwtKey, options));
   }));
 
-  // Requer login para as rotas definidas a partir desse ponto
-  if (uid == null) {
-    app.use(`${base}`, jwtMiddleware({ secret: jwtKey, algorithms: [jwtAlgorithm] }));
+  ///////////////////////////////////////////////////////////////
+  // Requer login para as rotas definidas a partir desse ponto //
+  ///////////////////////////////////////////////////////////////
+  if (username == null) {
+    app.use(base, jwtMiddleware({ secret: jwtKey, algorithms: [jwtAlgorithm] }));
+  } else {
+    if (process.env.NODE_ENV === "production") {
+      throw new Error("cannot force username in production; aborting");
+    }
+    const user = await User.findOne({ username });
+    app.use(base, handler(async (req, res, next) => {
+      if (user) {
+        req.user = {
+          uid: user.id
+        };
+        next();
+      } else {
+        res.status(401).send({});
+      }
+    }));
   }
 
+  // Criação de usuários
+  app.post(`${base}/users`, handler(async (req, res) => {
+    const [password, passwordMessage] = validatePassword(req.body.password);
+    if (!password) {
+      return res.status(400).send({ message: passwordMessage });
+    }
+    const [username, usernameMessage] = validateUsername(req.body.username);
+    if (!username) {
+      return res.status(400).send({ message: usernameMessage });
+    }
+    const user = await User.findOne({ username });
+    if (user != null) {
+      return res
+        .status(400)
+        .send({ message: "'username' must be unique" });
+    }
+    await User.insert({
+      username,
+      password: await bcrypt.hash(password, passwordStrength),
+    });
+    res.status(200).send({});
+  }));
+
+  // Atualização de usuários
+  app.put(`${base}/users/self`, handler(async (req, res) => {
+    if (typeof req.body.username !== "undefined") {
+      return res.status(400).send({ message: "'username' cannot be changed" });
+    }
+    const [password, passwordMessage] = validatePassword(req.body.password);
+    if (!password) {
+      return res.status(400).send({ message: passwordMessage });
+    }
+    if (typeof password !== "string" || password.length < 6 || password.length > 64) {
+      return res
+        .status(400)
+        .send({ message: "'password' must be a string between 6 and 64 characters in length" });
+    }
+    const user = await getUser(req);
+    if (user == null) {
+      return res
+        .status(401)
+        .send({ message: "logged in user does not exist" });
+    }
+    user.password = await bcrypt.hash(password, passwordStrength);
+    await user.save();
+    res.status(200).send({});
+  }));
+
+  // Remoção de usuários
+  app.delete(`${base}/users/self`, handler(async (req, res) => {
+    const user = await getUser(req);
+    if (user == null) {
+      return res
+        .status(401)
+        .send({ message: "logged in user does not exist" });
+    }
+    await user.remove();
+    res.status(200).send({});
+  }));
+
+  // Listagem de cervejas
   app.get(`${base}/beers`, handler(async (req, res) => {
+    const { search, page } = req.query;
     const perPage = 20;
     let data = cachedData;
-    let page = 1;
-    if (typeof req.query.search === "string") {
-      const search = req.query.search;
+    let pageNum = 1;
+    if (typeof search === "string") {
       if (search.length > 0) {
-        data = searcher.search(req.query.search).map((result) => result.item);
+        data = searcher.search(search).map((result) => result.item);
       }
     }
-    if (typeof req.query.page === "string") {
-      page = parseInt(req.query.page, 10);
+    if (typeof page === "string") {
+      pageNum = parseInt(page, 10);
     }
     res.send({
-      data: data.slice((page - 1) * perPage, page * perPage),
+      data: data.slice((pageNum - 1) * perPage, pageNum * perPage),
       pages: Math.max(Math.ceil(data.length / perPage), 1),
     } as BeerAPIResponse);
   }));
